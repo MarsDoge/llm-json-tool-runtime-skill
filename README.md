@@ -42,10 +42,11 @@ The skill guides agents to define:
 2. allowed actions
 3. strict JSON schema
 4. fixed prompt contract
-5. deterministic tool adapters
-6. validation and policy gates
-7. runtime execution loop
-8. tests, golden cases, and dry-run checks
+5. bounded memory/user preference context
+6. deterministic tool adapters
+7. validation and policy gates
+8. runtime execution loop
+9. tests, golden cases, and dry-run checks
 
 ## Repository Layout
 
@@ -83,6 +84,28 @@ Or start Hermes with the skill preloaded:
 
 ```bash
 hermes -s llm-json-tool-runtime
+```
+
+## Memory Layer
+
+Memory is treated as structured preference/state, not raw chat logs.
+
+Good memory records include:
+
+- user preferences, such as language, tone, timezone, default currency, UI style
+- user corrections, such as “this should be food, not shopping”
+- stable domain facts, such as project conventions or category mappings
+- developer-queryable iteration data, such as recurring parse failures or accepted corrections
+
+Memory can bias parsing and defaults, but it must never bypass schema validation, policy checks, or confirmation rules.
+
+```text
+user input
+  + prompt contract
+  + action manifest
+  + JSON schema
+  + retrieved preferences / prior corrections
+  -> LLM JSON decision
 ```
 
 ## Quick Example

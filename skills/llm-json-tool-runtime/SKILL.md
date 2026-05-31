@@ -16,6 +16,8 @@ metadata:
 
 This skill captures MarsDoge's preferred framework for rebuilding or developing AI projects.
 
+Public-facing shorthand: **JSON Tool Runtime**. The installed skill name is `llm-json-tool-runtime`, but when publishing docs, repos, examples, or product copy, prefer the shorter phrase “JSON Tool Runtime” unless an exact install command needs the full skill slug.
+
 The core idea: an LLM is the thinking transform from input to output, not the whole application. The application should build deterministic “hands, feet, and components” around the LLM: file IO, API clients, shell wrappers, database writes, browser extractors, notification senders, and other bounded tool adapters.
 
 Use the LLM to turn ambiguous human input into strict structured JSON. Then normal program code validates that JSON and dispatches safe deterministic tools. Program code owns state, permissions, retries, idempotency, logging, and side effects.
@@ -71,6 +73,70 @@ Do not use this as a heavy framework for:
 8. **No chain-of-thought dependency.** Store short `reason_codes` or `explanation` fields if needed for debugging, but do not require hidden reasoning text for execution.
 9. **Observable by default.** Log schema version, prompt version, model, parsed action, validation result, adapter result, and error path without leaking secrets.
 10. **Start narrow.** Add a few safe actions first; expand the tool surface only after tests and guardrails exist.
+11. **Memory is structured preference/state, not raw chat logs.** Use memory to dynamically capture user preferences, corrections, stable domain facts, and developer-queryable iteration data. Feed retrieved memory back into the prompt contract as bounded context, then let schemas and policy gates still control execution.
+
+## Memory and User Preference Layer
+
+Memory is a first-class input layer in this framework. It should not be treated as magical model state or a raw transcript dump. It is structured, queryable context that helps the program adapt to the user over time.
+
+Use memory for:
+
+- User preferences: language, tone, default currency, timezone, UI style, risk tolerance, notification style.
+- User corrections: “this category should be food, not shopping”, “never auto-post this type”, “prefer pnpm over npm”.
+- Stable domain facts: project conventions, account/category mappings, workspace defaults, schema defaults.
+- Developer-queryable iteration data: recurring parse failures, common clarification reasons, accepted corrections, preferred adapter behavior.
+- Online correction loops: when the user corrects an LLM decision, persist the corrected preference/fact so future runs improve.
+
+Do not use memory for:
+
+- Raw chat logs.
+- Secrets, credentials, private tokens, or sensitive payloads.
+- Temporary task progress that will become stale soon.
+- Unvalidated model guesses.
+- Side-effect records that belong in the product database.
+
+Memory should feed the LLM as bounded context:
+
+```text
+user input
+  + fixed prompt contract
+  + action manifest
+  + JSON schema
+  + retrieved user preferences / stable facts / prior corrections
+  -> LLM JSON decision
+```
+
+The runtime should still validate everything. Memory can bias parsing and defaults, but it must not bypass schema validation, permission checks, or confirmation rules.
+
+Recommended memory record shape:
+
+```json
+{
+  "type": "user_preference",
+  "scope": "bookkeeping",
+  "key": "default_payment_method",
+  "value": "wechat",
+  "source": "user_correction",
+  "confidence": "high",
+  "updated_at": "2026-05-31T22:30:00+08:00"
+}
+```
+
+Online correction flow:
+
+1. Program executes or proposes a JSON decision.
+2. User corrects the result.
+3. Program classifies whether the correction is durable.
+4. If durable, write a structured memory record.
+5. Future prompts retrieve relevant memory and include it as context.
+6. Tests/golden cases are updated if the correction reveals a systematic behavior.
+
+Developer iteration flow:
+
+1. Log validation failures, clarification reasons, rejected actions, and user corrections.
+2. Aggregate these records for developers.
+3. Use them to improve schemas, prompts, action definitions, and adapters.
+4. Keep product data, traces, and user preferences separated.
 
 ## Development Workflow
 
@@ -81,8 +147,8 @@ When building an AI project with this framework, follow this order:
 3. **List allowed actions.** Use stable action names like `ledger.add_expense`, `file.patch`, `calendar.create_event`, `notification.send`, `db.insert_record`.
 4. **Define the JSON schema.** Make action names enums. Make required fields explicit. Reject unknown fields where possible.
 5. **Design deterministic adapters.** Each action maps to one adapter function/module with strict input/output types.
-6. **Write the prompt contract.** Include domain rules, available actions, output schema, examples, unknown handling, and safety constraints.
-7. **Build the runtime loop.** Normalize input -> call LLM -> parse JSON -> validate -> dispatch adapter -> return result.
+6. **Write the prompt contract.** Include domain rules, available actions, output schema, examples, unknown handling, safety constraints, and bounded retrieved memory.
+7. **Build the runtime loop.** Normalize input -> retrieve relevant memory -> call LLM -> parse JSON -> validate -> dispatch adapter -> return result.
 8. **Handle failures.** Malformed JSON, schema mismatch, unsafe action, missing fields, unknown action, adapter error, timeout.
 9. **Add tests.** Golden examples, invalid examples, adapter unit tests, dry-run end-to-end tests.
 10. **Add observability.** Trace IDs, schema version, prompt version, model, validation errors, adapter status, but no secrets.
@@ -96,12 +162,14 @@ Use this mental model for most projects:
 def handle_event(event):
     normalized = normalize_event(event)
     context = load_context(normalized)
+    memory_context = retrieve_relevant_memory(normalized, context)
 
     llm_input = build_prompt(
         base_prompt=BASE_PROMPT,
         schema=OUTPUT_SCHEMA,
         action_manifest=ACTION_MANIFEST,
         context=context,
+        memory_context=memory_context,
         user_input=normalized,
     )
 
@@ -154,6 +222,9 @@ Rules:
 Schema:
 <insert JSON schema here>
 
+Relevant memory:
+<insert bounded user preferences, stable facts, and prior corrections here>
+
 User input:
 <insert normalized user input here>
 ```
@@ -167,6 +238,7 @@ Prompt quality checklist:
 - [ ] Unknown/missing information path is specified.
 - [ ] Risky action confirmation rule is specified.
 - [ ] Domain defaults are explicit.
+- [ ] Relevant memory is bounded, durable, and non-secret.
 - [ ] Examples cover common and ambiguous inputs.
 
 ## JSON Schema Contract Pattern
@@ -500,8 +572,10 @@ For coding tasks, prefer TDD:
 6. **Skipping idempotency.** External writes can duplicate if retries happen. Design idempotency keys for writes.
 7. **Logging secrets.** Do not put API keys, credentials, private tokens, or full sensitive payloads into prompts or traces.
 8. **Trusting confidence too much.** `confidence` is a hint, not proof. Validation and policy are still required.
-9. **Expanding actions too early.** Start with narrow safe actions; add more only after tests catch regressions.
-10. **Using the LLM as a database.** Store state in real storage. The LLM can summarize or choose; it should not be the source of truth.
+9. **Treating memory as truth.** Memory is useful context, but it can be stale, scoped incorrectly, or user-corrected later. Retrieve narrowly, include provenance when possible, and let explicit current user input override older memory.
+10. **Expanding actions too early.** Start with narrow safe actions; add more only after tests catch regressions.
+11. **Using the LLM as a database.** Store state in real storage. The LLM can summarize or choose; it should not be the source of truth.
+12. **Overlong public names.** For open-source publication and README copy, prefer a concise class-level name such as “JSON Tool Runtime”. Keep longer slugs only when needed for install compatibility or disambiguation.
 
 ## Verification Checklist
 
@@ -512,6 +586,8 @@ When applying this skill to a project, verify:
 - [ ] Allowed actions are listed as stable adapter names.
 - [ ] JSON schema exists and rejects unknown/invalid actions.
 - [ ] Prompt contract says JSON-only and defines unknown handling.
+- [ ] Relevant memory is retrieved narrowly and never bypasses policy.
+- [ ] User corrections can update durable preferences/facts when appropriate.
 - [ ] Runtime validates JSON before dispatch.
 - [ ] Policy gate runs before any side effect.
 - [ ] Destructive/external actions require confirmation.
