@@ -77,6 +77,8 @@ Do not use this as a heavy framework for:
 
 ## Memory and User Preference Layer
 
+See `references/memory-and-five-layer-notes.md` for the condensed session notes covering structured memory, online correction loops, Five-Layer mapping, and public naming guidance.
+
 Memory is a first-class input layer in this framework. It should not be treated as magical model state or a raw transcript dump. It is structured, queryable context that helps the program adapt to the user over time.
 
 Use memory for:
@@ -491,6 +493,18 @@ Schema:
 ```
 
 Program then writes tasks to Linear/Feishu/Notion only after validation and user/project policy checks.
+
+## Five-Layer World Mapping
+
+When this runtime is used inside the user's Five-Layer World Collaboration Model, place each part at the right layer instead of turning everything into an agent:
+
+- Cellular / tools: the LLM JSON action executors: JSON schemas, validators, policy gates, adapter functions, scripts, API clients, logs, and tests.
+- Biological / agents: an agent or app instance using the runtime with role, memory, tools, state, and health.
+- Societal / multi-agent: L0/L1/L2 agents sharing action contracts, review evidence, handoffs, and correction loops.
+- Planetary / world: workspace, gateway, memory, docs, cron, skills, and registries coherently running together.
+- Cosmic / multi-node: multi-device or multi-service hands that execute validated actions and return evidence.
+
+Rule: memory and schemas improve the lower layers, but execution authority still lives in validated code and explicit policy gates.
 
 ## Safety and Permission Model
 
