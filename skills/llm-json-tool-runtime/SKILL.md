@@ -77,7 +77,7 @@ Do not use this as a heavy framework for:
 
 ## Memory and User Preference Layer
 
-See `references/memory-and-five-layer-notes.md` for the condensed session notes covering structured memory, online correction loops, Five-Layer mapping, and public naming guidance.
+See `references/memory-and-five-layer-notes.md` for the condensed session notes covering structured memory, online correction loops, Five-Layer mapping, and public naming guidance. See `references/submodule-collection-pattern.md` for the recommended open-source collection layout where this skill remains an independent repo and is included as a submodule from a broader Five-Layer skill collection.
 
 Memory is a first-class input layer in this framework. It should not be treated as magical model state or a raw transcript dump. It is structured, queryable context that helps the program adapt to the user over time.
 
@@ -133,6 +133,52 @@ Online correction flow:
 5. Future prompts retrieve relevant memory and include it as context.
 6. Tests/golden cases are updated if the correction reveals a systematic behavior.
 
+### Pre-LLM and Post-LLM Correction
+
+Treat preference correction as a two-stage loop:
+
+```text
+Pre-LLM correction teaches the model before it decides.
+Post-LLM correction controls, repairs, or rejects the decision after it is produced.
+```
+
+**Pre-LLM Preference Injection** happens before the model call:
+
+```text
+user input
+  -> retrieve relevant user preferences, stable facts, and prior corrections
+  -> build bounded prompt context
+  -> LLM outputs strict JSON
+```
+
+Use it for durable defaults and biasing context, such as timezone, preferred language, bookkeeping category mappings, project conventions, and previous user corrections. Pre-LLM memory may guide the model, but it must not override current explicit user input or bypass validation.
+
+**Post-LLM Validation and Correction** happens after the model emits JSON:
+
+```text
+LLM JSON
+  -> parse
+  -> schema validation
+  -> policy gate
+  -> deterministic normalization when safe
+  -> user confirmation/correction when needed
+```
+
+Use it for schema failures, unsafe action correction, missing required fields, confirmation escalation, deterministic normalization, and user feedback. If the user correction reveals a durable preference, write it back to memory so it becomes future Pre-LLM context.
+
+Full loop:
+
+```text
+Input
+  -> Pre-LLM Correction Layer
+  -> LLM JSON Generation
+  -> Post-LLM Correction Layer
+  -> Adapter Execution
+  -> Trace / Memory Update
+```
+
+Rule: LLM 前纠偏是“让它少犯错”；LLM 后纠偏是“犯错也不能直接执行”。
+
 Developer iteration flow:
 
 1. Log validation failures, clarification reasons, rejected actions, and user corrections.
@@ -150,7 +196,7 @@ When building an AI project with this framework, follow this order:
 4. **Define the JSON schema.** Make action names enums. Make required fields explicit. Reject unknown fields where possible.
 5. **Design deterministic adapters.** Each action maps to one adapter function/module with strict input/output types.
 6. **Write the prompt contract.** Include domain rules, available actions, output schema, examples, unknown handling, safety constraints, and bounded retrieved memory.
-7. **Build the runtime loop.** Normalize input -> retrieve relevant memory -> call LLM -> parse JSON -> validate -> dispatch adapter -> return result.
+7. **Build the runtime loop.** Normalize input -> retrieve relevant memory -> apply Pre-LLM preference injection -> call LLM -> parse JSON -> apply Post-LLM validation/correction -> dispatch adapter -> trace result and memory updates.
 8. **Handle failures.** Malformed JSON, schema mismatch, unsafe action, missing fields, unknown action, adapter error, timeout.
 9. **Add tests.** Golden examples, invalid examples, adapter unit tests, dry-run end-to-end tests.
 10. **Add observability.** Trace IDs, schema version, prompt version, model, validation errors, adapter status, but no secrets.
@@ -589,7 +635,8 @@ For coding tasks, prefer TDD:
 9. **Treating memory as truth.** Memory is useful context, but it can be stale, scoped incorrectly, or user-corrected later. Retrieve narrowly, include provenance when possible, and let explicit current user input override older memory.
 10. **Expanding actions too early.** Start with narrow safe actions; add more only after tests catch regressions.
 11. **Using the LLM as a database.** Store state in real storage. The LLM can summarize or choose; it should not be the source of truth.
-12. **Overlong public names.** For open-source publication and README copy, prefer a concise class-level name such as “JSON Tool Runtime”. Keep longer slugs only when needed for install compatibility or disambiguation.
+12. **Mixing Pre-LLM and Post-LLM correction.** Retrieved memory and prior corrections belong in bounded prompt context before generation; schema, policy, confirmation, deterministic repair, and user feedback belong after generation. Do not use prompt memory as a substitute for runtime gates.
+13. **Overlong public names.** For open-source publication and README copy, prefer a concise class-level name such as “JSON Tool Runtime”. Keep longer slugs only when needed for install compatibility or disambiguation.
 
 ## Verification Checklist
 

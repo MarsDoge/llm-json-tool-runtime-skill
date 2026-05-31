@@ -108,6 +108,32 @@ user input
   -> LLM JSON decision
 ```
 
+### Preference Correction Loop
+
+Preference correction has two stages:
+
+```text
+Pre-LLM correction teaches the model before it decides.
+Post-LLM correction controls, repairs, or rejects the decision after it is produced.
+```
+
+Pre-LLM Preference Injection happens before the model call: retrieve scoped preferences, stable facts, and prior corrections, then inject them as bounded prompt context.
+
+Post-LLM Validation and Correction happens after JSON generation: parse, schema-validate, policy-check, normalize only when deterministic and safe, and ask for user confirmation/correction when needed.
+
+Durable post-LLM corrections should be written back as structured memory so they become future pre-LLM context.
+
+```text
+Input
+  -> Pre-LLM Correction Layer
+  -> LLM JSON Generation
+  -> Post-LLM Correction Layer
+  -> Adapter Execution
+  -> Trace / Memory Update
+```
+
+Short rule: LLM 前纠偏是“让它少犯错”；LLM 后纠偏是“犯错也不能直接执行”。
+
 ## Quick Example
 
 User input:
